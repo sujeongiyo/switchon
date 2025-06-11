@@ -685,3 +685,6 @@ def create_user_friendly_chat_chain():
         }
         | prompt
         | llm
+        | StrOutputParser()
+    )
+    return chain
