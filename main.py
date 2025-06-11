@@ -9,6 +9,7 @@ import uuid
 import logging
 import requests
 import zipfile
+import gdown
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -35,12 +36,11 @@ logging.basicConfig(level=logging.WARNING)
 
 load_dotenv()
 
-# ——— 🚀 Google Drive 다운로드 함수 ———
+# ——— 🚀 Google Drive 다운로드 함수 (gdown 기반) ———
 @st.cache_data
 def download_and_extract_databases():
     """Google Drive에서 ChromaDB 파일들을 다운로드하고 압축 해제"""
     
-    # 압축 파일 정보 (파일명, 추출 위치, Google Drive 파일 ID)
     files_to_download = [
         {
             "filename": "chroma_db_law_real_final.zip",
@@ -53,78 +53,46 @@ def download_and_extract_databases():
             "gdrive_id": "1dU9TLAPMg-Q8DLQjZM38CC-TsK477dSO"
         }
     ]
-
+    
     def download_and_extract_single(file_info):
-        url = f"https://drive.google.com/uc?export=download&id={file_info['gdrive_id']}"
         zip_path = file_info["filename"]
         extract_path = file_info["extract_dir"]
+        gdrive_id = file_info["gdrive_id"]
 
         if not os.path.exists(extract_path):
             st.info(f"📥 다운로드 중: {zip_path}")
-            
-            # 다운로드 진행 상황 표시
             progress_bar = st.progress(0)
             status_text = st.empty()
-            
             try:
-                # requests로 파일 다운로드
-                status_text.text("서버 연결 중...")
                 progress_bar.progress(10)
-                
-                r = requests.get(url, stream=True)
-                r.raise_for_status()
-                
-                total_size = int(r.headers.get('content-length', 0))
-                downloaded_size = 0
-                
-                status_text.text(f"다운로드 중: {zip_path}")
-                
-                with open(zip_path, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded_size += len(chunk)
-                            if total_size > 0:
-                                progress = min(50, int((downloaded_size / total_size) * 40) + 10)
-                                progress_bar.progress(progress)
+                status_text.text("Google Drive에서 다운로드 중...")
+
+                # ▶ gdown으로 다운로드
+                gdown.download(id=gdrive_id, output=zip_path, quiet=False)
 
                 progress_bar.progress(60)
-                status_text.text(f"압축 해제 중: {zip_path}")
+                status_text.text("압축 해제 중...")
 
-                # 압축 해제
                 with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                     zip_ref.extractall(extract_path)
-                
-                progress_bar.progress(90)
-                
-                # 압축 파일 삭제 (용량 절약)
+
                 os.remove(zip_path)
-                
                 progress_bar.progress(100)
                 status_text.text(f"✅ 완료: {extract_path}")
-                
-                # UI 정리
-                time.sleep(1)
-                progress_bar.empty()
-                status_text.empty()
-                
                 st.success(f"✅ {extract_path} 준비 완료!")
-                
+
             except Exception as e:
                 st.error(f"❌ 다운로드 실패: {zip_path} - {str(e)}")
                 return False
+            finally:
+                progress_bar.empty()
+                status_text.empty()
         else:
             st.success(f"✅ 이미 존재함: {extract_path}")
-        
+
         return True
 
-    # 모든 파일 다운로드 실행
-    all_success = True
-    for file_info in files_to_download:
-        success = download_and_extract_single(file_info)
-        all_success = all_success and success
-    
-    return all_success
+    return all(download_and_extract_single(info) for info in files_to_download)
 
 # ——— 커스텀 CSS 스타일 ———
 def load_custom_css():
