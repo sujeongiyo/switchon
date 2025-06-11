@@ -2,10 +2,6 @@ __import__('pysqlite3')
 import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
-# 🔧 torch 멀티프로세싱 모드 설정
-import torch.multiprocessing
-torch.multiprocessing.set_start_method('spawn', force=True)
-
 # 🔧 asyncio 루프 강제 설정
 import asyncio
 try:
