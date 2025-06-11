@@ -3,6 +3,12 @@ import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
 import os
+import subprocess
+
+# Chroma DB 파일 없을 시 자동 다운로드
+if not os.path.exists(".chroma/collections.db"):
+    subprocess.run(["bash", "scripts/download_chroma.sh"])
+    
 import time
 import functools
 import uuid
