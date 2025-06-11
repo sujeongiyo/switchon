@@ -15,4 +15,4 @@ chromadb
 openai
 pysqlite3-binary
 protobuf==4.25.3  # ← 여기가 핵심
-
+requests
