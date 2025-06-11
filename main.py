@@ -677,14 +677,306 @@ def create_user_friendly_chat_chain():
         except Exception as e:
             return "검색 중 오류가 발생했습니다."
     
-    chain = (
-        {
-            "context": RunnableLambda(lambda x: user_friendly_retrieve_and_format(x["question"])),
-            "question": RunnableLambda(lambda x: x["question"]),
-            "chat_history": RunnableLambda(lambda x: x.get("chat_history", [])),
-        }
-        | prompt
-        | llm
-        | StrOutputParser()
+# 8. 메모리 관리
+store = {}
+
+def get_session_history(session_id):
+    if session_id not in store:
+        store[session_id] = ChatMessageHistory()
+    history = store[session_id]
+    if len(history.messages) > 20:
+        history.messages = history.messages[-20:]
+    return history
+
+def create_chat_chain_with_memory():
+    """메모리 기능이 있는 채팅 체인"""
+    base_chain = create_user_friendly_chat_chain()
+    chain_with_history = RunnableWithMessageHistory(
+        base_chain,
+        get_session_history,
+        input_messages_key="question",
+        history_messages_key="chat_history",
     )
-    return chain
+    return chain_with_history
+
+# ——— 광고 배너 함수 ———
+def display_ad_banner():
+    st.markdown("---")
+    st.markdown('<h5 style="color: #b45309;">✨ 추천 부동산 전문가</h5>', unsafe_allow_html=True)
+
+    ads = [
+        {
+            "img": "https://search.pstatic.net/common/?autoRotate=true&type=w560_sharpen&src=https%3A%2F%2Fldb-phinf.pstatic.net%2F20180518_269%2F1526627900915a2haI_PNG%2FDhZnKmpdc0bNIHMpMyeDLuUE.png",
+            "title": "🏢 대치래미안공인중개사사무소",
+            "phone": "0507-1408-0123",
+            "desc": "📍 서울 강남구 대치동",
+            "link": "https://naver.me/xslBVRJX"
+        },
+        {
+            "img": "https://search.pstatic.net/common/?src=https%3A%2F%2Fldb-phinf.pstatic.net%2F20250331_213%2F1743412607070OviNF_JPEG%2F1000049538.jpg",
+            "title": "🏡 메종공인중개사사무소",
+            "phone": "0507-1431-4203",
+            "desc": "🏠 전문 부동산 상담",
+            "link": "https://naver.me/IgJnnCcG"
+        },
+        {
+            "img": "https://search.pstatic.net/common/?autoRotate=true&type=w560_sharpen&src=https%3A%2F%2Fldb-phinf.pstatic.net%2F20200427_155%2F15879809374237E6dq_PNG%2FALH-zx7fy26wJg1T6EUOHC0W.png",
+            "title": "👑 로얄공인중개사사무소",
+            "phone": "02-569-8889",
+            "desc": "🌟 신뢰할 수 있는 거래",
+            "link": "https://naver.me/5GGPXQe8"
+        }
+    ]
+
+    for ad in ads:
+        st.markdown(f"""
+        <div style="
+            background-color: #fffbea;
+            border-radius: 15px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+        ">
+            <div style="display: flex; align-items: center;">
+                <img src="{ad['img']}" style="width: 3cm; height: 2cm; object-fit: cover; border-radius: 8px; margin-right: 15px;" />
+                <div>
+                    <p style="margin-bottom: 5px; font-size: 16px; font-weight: 600;">{ad['title']}</p>
+                    <p style="margin: 0;">☎ <strong>{ad['phone']}</strong></p>
+                    <p style="margin: 0;">{ad['desc']}</p>
+                    <a href="{ad['link']}" target="_blank" style="color: #b45309; font-weight: bold;">🔗 바로가기</a>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown("💡 **신뢰할 수 있는 부동산 전문가와 상담하세요**")
+
+# ——— 🔧 시스템 초기화 함수 (핵심!) ———
+@st.cache_resource
+def initialize_complete_system():
+    """시스템 전체 초기화 - 데이터베이스 다운로드 + RAG 시스템 생성"""
+    
+    st.info("🚀 AI 스위치온 시스템을 초기화하고 있습니다...")
+    
+    # 1단계: 데이터베이스 다운로드
+    st.info("📥 ChromaDB 데이터베이스 다운로드 중...")
+    download_success = download_and_extract_databases()
+    
+    if download_success:
+        st.success("✅ 데이터베이스 다운로드 완료!")
+    else:
+        st.warning("⚠️ 데이터베이스 다운로드에 문제가 있지만 계속 진행합니다.")
+    
+    # 2단계: RAG 시스템 초기화
+    st.info("🤖 RAG 시스템 초기화 중...")
+    try:
+        rag_system = get_rag_system()
+        st.success("✅ RAG 시스템 초기화 완료!")
+        return rag_system, True
+    except Exception as e:
+        st.error(f"❌ RAG 시스템 초기화 실패: {str(e)}")
+        return None, False
+
+# ——— 메인 애플리케이션 ———
+def main():
+    """메인 애플리케이션 함수"""
+    
+    # Streamlit 페이지 설정
+    st.set_page_config(
+        page_title="AI 스위치온 - 판례 검색 시스템", 
+        page_icon="🏠", 
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+
+    # 커스텀 CSS 로드
+    load_custom_css()
+
+    # ——— 헤더 ———
+    st.markdown("""
+    <div class="header-container">
+        <div class="header-title">💡 <span class="highlight">AI 스위치온</span></div>
+        <div class="header-subtitle">판례 기반 AI 부동산 거래 지원 서비스</div>
+        <div style="margin-top: 1rem; font-size: 1rem; color: #e5e7eb;">
+            💡 상황을 자세하게 설명해주시면 맞춤형 법률 정보를 제공해드립니다
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ——— 🚀 핵심! 시스템 초기화 ———
+    with st.spinner("🔄 AI 시스템 초기화 중..."):
+        rag_system, system_ready = initialize_complete_system()
+
+    # ——— 세션 초기화 ———
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    # ——— 채팅 체인 생성 ———
+    if system_ready:
+        try:
+            chain = create_chat_chain_with_memory()
+        except Exception as e:
+            st.error(f"❌ 채팅 시스템 오류: {str(e)}")
+            chain = None
+    else:
+        chain = None
+
+    # ——— 사이드바 ———
+    with st.sidebar:
+        st.markdown("""
+        <div style="text-align: center; padding: 1rem;">
+            <h2 style="color: #6b21a8; margin-bottom: 1rem;">🔍 빠른 질문</h2>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        example_questions = [
+            "전세사기 당했을 때 대처방법은?",
+            "보증금을 돌려받을 수 있을까요?",
+            "임차권등기명령이란 무엇인가요?",
+            "집주인이 등기이전을 안 해줄 때 어떻게 하나요?",
+            "집이 경매로 넘어갔을 때 전세보증금은 어떻게 되나요?"
+        ]
+        
+        for i, q in enumerate(example_questions):
+            if st.button(f" {q}", key=f"example_{i}", use_container_width=True):
+                st.session_state["sidebar_prompt"] = q
+                st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        if st.button("↻ 대화 기록 초기화", use_container_width=True, type="secondary"):
+            st.session_state.chat_history = []
+            st.rerun()
+
+        st.markdown("<hr>", unsafe_allow_html=True)
+        
+        # 시스템 상태 표시
+        st.markdown("""
+        <div class="sidebar-card" style="border: 2px solid #10b981; background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);">
+            <h4 style="color: #065f46; margin-bottom: 1rem;">📊 시스템 상태</h4>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if system_ready:
+            st.success("✅ RAG 시스템 준비완료")
+        else:
+            st.error("❌ RAG 시스템 오류")
+        
+        # 데이터베이스 상태
+        if os.path.exists("chroma_db_law_real_final"):
+            st.success("✅ 법률 DB 연결됨")
+        else:
+            st.warning("⚠️ 법률 DB 미연결")
+            
+        if os.path.exists("ja_chroma_db"):
+            st.success("✅ 뉴스 DB 연결됨")
+        else:
+            st.warning("⚠️ 뉴스 DB 미연결")
+        
+        st.markdown("""
+        <div class="sidebar-card" style="border: 2px solid #8b5cf6;">
+            <h4 style="color: #6b21a8; margin-bottom: 1rem;">✔️ 서비스 안내</h4>
+            <ul style="color: #4b5563; line-height: 1.6; font-weight: bold;">
+                <li>부동산 관련 법률 문제 상담</li>
+                <li>판례 기반 답변 제공</li>
+                <li>전세사기 피해 대처방안 안내</li>
+                <li>일반인도 이해하기 쉬운 설명</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("""
+        <div class="sidebar-card" style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 2px solid #f5bd5f;">
+            <h4 style="color: #80370b; margin-bottom: 1rem;">⚠️ 주의사항</h4>
+            <ul style="color: #92400e; line-height: 1.6; margin: 0;">
+                <li>본 서비스는 부동산 법률 정보를 참고용으로 제공하는 AI입니다.</li>
+                <li>중요한 법적 문제는 반드시 변호사와 상담하시기 바랍니다.</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ——— 채팅 UI ———
+    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+
+    # 채팅 기록 표시
+    for message in st.session_state.chat_history:
+        if message["role"] == "user":
+            st.markdown(f"""
+            <div class="user-message">
+                <div class="user-bubble">
+                    {message["content"]}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        elif message["role"] == "assistant":
+            st.markdown(f"""
+            <div class="ai-message">
+                <div class="ai-bubble">
+                    {message["content"]}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # AI 답변 후 광고 배너 표시
+            display_ad_banner()
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # ——— 질문 입력 ———
+    prompt = st.session_state.pop("sidebar_prompt", None)
+    if not prompt:
+        # 커스텀 입력창 스타일
+        st.markdown("""
+        <div style="position: sticky; bottom: 0; background: rgba(255,255,255,0.95); 
+                    padding: 1rem; border-radius: 15px; margin-top: 2rem;
+                    box-shadow: 0 -5px 15px rgba(139, 92, 246, 0.1);
+                    backdrop-filter: blur(10px);">
+        """, unsafe_allow_html=True)
+        
+        prompt = st.chat_input("💭 질문을 입력하세요 (예: 보증금 돌려받을 수 있을까요?)", key="user_input")
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ——— 질문 처리 ———
+    if prompt:
+        # 사용자 메시지 저장
+        st.session_state.chat_history.append({"role": "user", "content": prompt})
+
+        # 답변 생성
+        with st.spinner("🤖 AI가 판례를 검색하고 답변을 생성하고 있습니다..."):
+            try:
+                if chain and system_ready:
+                    response = chain.invoke(
+                        {"question": prompt},
+                        config={"configurable": {"session_id": st.session_state.session_id}},
+                    )
+                    st.session_state.chat_history.append({"role": "assistant", "content": response})
+                else:
+                    error_message = "죄송합니다. 현재 시스템 초기화 중입니다. 잠시 후 다시 시도해주세요."
+                    st.session_state.chat_history.append({"role": "assistant", "content": error_message})
+                    
+            except Exception as e:
+                error_message = f"죄송합니다. 답변 생성 중 오류가 발생했습니다: {str(e)}"
+                st.session_state.chat_history.append({"role": "assistant", "content": error_message})
+
+        # 답변 생성 후 페이지 새로고침
+        st.rerun()
+
+    # ——— 푸터 ———
+    st.markdown("""
+    <div style="margin-top: 3rem; padding: 2rem; text-align: center; 
+               background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+               border-radius: 15px; border-top: 3px solid #8b5cf6;">
+        <p style="color: #6b7280; margin: 0;">
+            💡 <strong>AI 스위치온</strong> | 부동산 법률 상담 AI 서비스<br>
+            <span style="font-size: 0.9rem;">※ 본 서비스는 참고용이며, 실제 법률 문제는 전문가와 상담하시기 바랍니다.</span>
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+if __name__ == "__main__":
+    main()
