@@ -36,9 +36,10 @@ logging.basicConfig(level=logging.WARNING)
 
 load_dotenv()
 
-# --- 벡터 DB 다운로드 함수
+# ——— 🔧 벡터 DB 다운로드 함수 ———
 @st.cache_resource
 def download_and_extract_databases(verbose=True):
+    """허깅페이스에서 벡터 DB 다운로드"""
     urls = {
         "chroma_db_law_real_final": "https://huggingface.co/datasets/sujeonggg/chroma_db_law_real_final/resolve/main/chroma_db_law_real_final.zip",
         "ja_chroma_db": "https://huggingface.co/datasets/sujeonggg/chroma_db_law_real_final/resolve/main/ja_chroma_db.zip",
@@ -48,7 +49,9 @@ def download_and_extract_databases(verbose=True):
         os.makedirs(extract_to, exist_ok=True)
         zip_path = os.path.join(extract_to, "temp.zip")
 
-        if os.path.exists(os.path.join(extract_to, "index")):
+        # 이미 존재하는지 확인
+        if os.path.exists(os.path.join(extract_to, "chroma.sqlite3")) or \
+           any(os.path.exists(os.path.join(extract_to, f)) for f in ["index", "chroma", "data"]):
             if verbose:
                 print(f"✅ Already exists: {extract_to}")
             return True
@@ -56,9 +59,13 @@ def download_and_extract_databases(verbose=True):
         try:
             if verbose:
                 print(f"📦 Downloading from {url}...")
-            r = requests.get(url)
+            r = requests.get(url, stream=True)
+            r.raise_for_status()
+            
             with open(zip_path, "wb") as f:
-                f.write(r.content)
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
 
             if verbose:
                 print(f"🧩 Unzipping to {extract_to}...")
@@ -78,6 +85,52 @@ def download_and_extract_databases(verbose=True):
             success = False
 
     return success
+
+# ——— 🔧 임베딩 모델 및 DB 초기화 ———
+@st.cache_resource
+def initialize_embeddings_and_databases():
+    """임베딩 모델과 벡터 DB 초기화"""
+    try:
+        # 1. 벡터 DB 다운로드
+        print("📥 벡터 DB 다운로드 중...")
+        download_success = download_and_extract_databases(verbose=False)
+        if not download_success:
+            return None, None, None, False
+        
+        # 2. 임베딩 모델 초기화
+        print("🔄 임베딩 모델 로딩 중...")
+        embedding_model = SentenceTransformer("snunlp/KR-SBERT-V40K-klueNLI-augSTS")
+        print("✅ 임베딩 모델 로딩 완료")
+        
+        # 3. Chroma DB 연결
+        legal_db = None
+        news_db = None
+        
+        if os.path.exists("chroma_db_law_real_final"):
+            try:
+                legal_db = Chroma(
+                    persist_directory="chroma_db_law_real_final",
+                    embedding_function=embedding_model
+                )
+                print("✅ 법률 DB 연결 완료")
+            except Exception as e:
+                print(f"⚠️ 법률 DB 연결 실패: {e}")
+        
+        if os.path.exists("ja_chroma_db"):
+            try:
+                news_db = Chroma(
+                    persist_directory="ja_chroma_db",
+                    embedding_function=embedding_model
+                )
+                print("✅ 뉴스 DB 연결 완료")
+            except Exception as e:
+                print(f"⚠️ 뉴스 DB 연결 실패: {e}")
+        
+        return embedding_model, legal_db, news_db, True
+        
+    except Exception as e:
+        print(f"❌ 초기화 실패: {e}")
+        return None, None, None, False
 
 
 # ——— 커스텀 CSS 스타일 ———
