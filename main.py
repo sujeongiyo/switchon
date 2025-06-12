@@ -1,3 +1,4 @@
+import __main__
 __import__('pysqlite3')
 import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
@@ -38,22 +39,13 @@ load_dotenv()
 
 
 from utils.vector_db_loader import download_and_extract_databases
-
-# --- 다운로드 및 압축 해제 (경로명은 고정되어 있음)
-download_and_extract_databases(verbose=True)
-
-# --- KoSBERT 임베딩 모델 로드
-embedding_model = SentenceTransformer("snunlp/KR-SBERT-V40K-klueNLI-augSTS")
-
-# --- Chroma Vector DB 로드
-legal_db = Chroma(
-    persist_directory="chroma_db_law_real_final",
-    embedding_function=embedding_model
-)
-
-news_db = Chroma(
-    persist_directory="ja_chroma_db",
-    embedding_function=embedding_model
+from core.app_core import (
+    initialize_complete_system,
+    get_rag_system,
+    create_chat_chain_with_memory,
+    optimized_retrieve_and_format,
+    load_custom_css,
+    display_ad_banner,
 )
 
 
