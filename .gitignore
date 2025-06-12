@@ -2,6 +2,3 @@ chroma_db_law_real_final/
 ja_chroma_db/
 chroma_db_law_real_final.zip
 ja_chroma_db.zip
-
-# Streamlit secrets (보안 정보)
-.streamlit/secrets.toml
