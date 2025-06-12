@@ -517,32 +517,136 @@ class OptimizedConditionalRAGSystem:
             print(f"❌ 검색 오류: {e}")
             return [], "error"
 
-# ——— 문서 포맷팅 ———
+# 4. 최적화된 문서 포맷팅 (기존과 동일)
 def format_docs_optimized(docs, search_type):
-    """문서 포맷팅"""
+    """최적화된 문서 포맷팅 - 출처별 명확한 구분"""
     if not docs:
         return "관련 자료를 찾을 수 없습니다."
     
     formatted_docs = []
-    for i, doc in enumerate(docs[:10]):  # 최대 10개 표시
+    news_count = 0
+    precedent_count = 0
+    interpretation_count = 0
+    qa_count = 0
+    
+    for i, doc in enumerate(docs):
         try:
             meta = doc.metadata if doc.metadata else {}
-            content = str(doc.page_content)[:500] if doc.page_content else ""
+            content = str(doc.page_content)[:1000] if doc.page_content else ""
             
             is_news = ('url' in meta and 'title' in meta) or ('date' in meta and 'title' in meta)
             
             if is_news:
-                title = str(meta.get("title", "제목없음"))[:60]
-                formatted = f"[뉴스-{i+1}] 📰 {title}\n내용: {content}...\n"
+                news_count += 1
+                title = str(meta.get("title", "제목없음"))[:80]
+                date = str(meta.get("date", "날짜미상"))
+                source = str(meta.get("source", "뉴스"))
+                
+                formatted = f"[뉴스-{news_count}] 📰 뉴스\n"
+                formatted += f"제목: {title}\n"
+                formatted += f"출처: {source} | 날짜: {date}\n"
+                formatted += f"내용: {content}...\n"
+                
             else:
-                doc_type = str(meta.get("doc_type", "법률자료"))
-                formatted = f"[법률-{i+1}] 🏛️ {doc_type}\n내용: {content}...\n"
+                doc_type = str(meta.get("doc_type", "")).lower()
+                
+                if any(keyword in doc_type for keyword in ["판례", "판결", "대법원", "고등법원", "지방법원"]) or \
+                   any(key in meta for key in ["판결요지", "판시사항", "case_id", "court"]):
+                    
+                    case_id = str(meta.get("case_id", ""))
+                    if case_id and case_id.strip() != "":
+                        formatted = f"[판례-{case_id}] 🏛️ 판례\n"
+                    else:
+                        precedent_count += 1
+                        formatted = f"[판례-{precedent_count}] 🏛️ 판례\n"
+                    
+                    formatted += f"내용: {content}...\n"
+                    
+                elif any(keyword in doc_type for keyword in ["법령해석", "해석례", "유권해석", "행정해석"]) or \
+                     any(key in meta for key in ["해석내용", "법령명", "interpretation_id"]):
+                    
+                    interpretation_id = str(meta.get("interpretation_id", ""))
+                    if interpretation_id and interpretation_id.strip() != "":
+                        formatted = f"[법령해석례-{interpretation_id}] ⚖️ 법령해석례\n"
+                    else:
+                        interpretation_count += 1
+                        formatted = f"[법령해석례-{interpretation_count}] ⚖️ 법령해석례\n"
+                    
+                    formatted += f"내용: {content}...\n"
+                    
+                elif any(keyword in doc_type for keyword in ["백문백답", "생활법령", "qa", "질의응답", "faq"]) or \
+                     any(key in meta for key in ["질문", "답변", "question", "answer", "qa_id"]):
+                    
+                    qa_id = str(meta.get("qa_id", ""))
+                    if qa_id and qa_id.strip() != "":
+                        formatted = f"[백문백답-{qa_id}] 💡 생활법령 Q&A\n"
+                    else:
+                        qa_count += 1
+                        formatted = f"[백문백답-{qa_count}] 💡 생활법령 Q&A\n"
+                    
+                    formatted += f"내용: {content}...\n"
+                    
+                else:
+                    precedent_count += 1
+                    source = str(meta.get("doc_type", "법률자료"))
+                    formatted = f"[법률-{precedent_count}] 📋 {source}\n"
+                    formatted += f"내용: {content}...\n"
             
             formatted_docs.append(formatted)
-        except:
-            continue
+            
+        except Exception as e:
+            print(f"⚠️ 문서 포맷팅 오류: {e}")
+            try:
+                content = str(doc.page_content)[:1000] if doc.page_content else "내용 없음"
+                formatted_docs.append(f"[문서-{i+1}] {content}...")
+            except:
+                continue
     
-    return "\n\n".join(formatted_docs)
+    # 결과 조합 - 유형별 개수 표시
+    header_parts = []
+    if precedent_count > 0:
+        header_parts.append(f"판례 {precedent_count}개")
+    if interpretation_count > 0:
+        header_parts.append(f"법령해석례 {interpretation_count}개")
+    if qa_count > 0:
+        header_parts.append(f"생활법령Q&A {qa_count}개")
+    if news_count > 0:
+        header_parts.append(f"뉴스 {news_count}개")
+    
+    header = f"📋 검색결과: {', '.join(header_parts)}\n"
+    header += "="*60 + "\n"
+    header += "⚠️ AI가 아래 자료 유형을 정확히 확인하고 답변하세요:\n"
+    
+    if precedent_count > 0:
+        header += f"• 판례 자료: [판례-번호] 🏛️ 판례 형태로 표시됨\n"
+    if interpretation_count > 0:
+        header += f"• 법령해석례 자료: [법령해석례-번호] ⚖️ 법령해석례 형태로 표시됨\n"
+    if qa_count > 0:
+        header += f"• 생활법령 자료: [백문백답-번호] 💡 생활법령 Q&A 형태로 표시됨\n"
+    if news_count > 0:
+        header += f"• 뉴스 자료: [뉴스-번호] 📰 뉴스 형태로 표시됨\n"
+    
+    header += "="*60 + "\n\n"
+    
+    result = header + "\n\n".join(formatted_docs)
+    
+    return result
+
+# 7. 최적화된 검색 함수
+def optimized_retrieve_and_format(query):
+    """최적화된 검색 및 포맷팅 - 전처리 포함"""
+    try:
+        rag_system = get_rag_system()
+        docs, search_type = rag_system.conditional_retrieve(query)
+        
+        if not isinstance(docs, list):
+            return f"검색 결과 형식 오류: {type(docs)}"
+        
+        return format_docs_optimized(docs, search_type)
+        
+    except Exception as e:
+        print(f"❌ 검색 오류: {e}")
+        return f"검색 중 오류가 발생했습니다: {str(e)}"
 
 # ——— 채팅 체인 생성 ———
 def create_user_friendly_chat_chain(rag_system):
@@ -557,35 +661,73 @@ def create_user_friendly_chat_chain(rag_system):
     당신은 부동산 임대차, 전세사기, 법령해석, 생활법령 Q&A, 뉴스 기사 등 다양한 법률 데이터를 바탕으로 청년을 돕는 법률 전문가 AI 챗봇입니다.  
     특히 전세사기 피해 등 부동산 문제로 어려움을 겪는 사람들에게 쉽고 실질적인 도움을 제공하는 역할을 합니다.
 
+    ---
+
     ### ✅ 답변 원칙
     1. **어려운 법률 용어는 일상적인 표현**으로 바꿔 설명합니다.  
     2. **구체적이고 실천 가능한 해결 방법**을 제시합니다.  
     3. **친절하고 따뜻한 말투**를 사용하여, 불안한 상황에 있는 사람에게 위로와 힘이 되도록 합니다.  
     4. **법률적 근거가 있는 정보만 제공**하며, 출처를 명확히 표기합니다.  
 
+    ---
+
     ### 🧭 답변 구조
+
     [질문 해석 안내]  
-    사용자의 질문을 법률 검색에 적합하게 바꿔서 이해했음을 간단히 설명합니다.
+    사용자의 질문을 법률 검색에 적합하게 바꿔서 이해했음을 간단히 설명합니다.<br>
+    (예: "질문하신 내용을 법률 용어로 바꾸면 '보증금을 돌려받지 못한 경우에 대한 법적 대응'으로 볼 수 있어요.")<br>
 
     ##### 🔹 **유사 판례 요약**  
     법률 벡터DB에서 찾은 관련 판례를 설명하고, 사용자 질문에 맞게 핵심 내용을 풀어 설명합니다.  
-    → 출처 표기: **[참고: 판례]**
+    유사 판례는 2개를 가져오세요. 
+    출처 표기는 판례 요약 앞에는 달지 마세요. 답변 뒤에 달아주세요. 
+    각 판례 앞에는 1, 2번으로 숫자를 적어주세요. 
+    → 출처 표기: (예: **[참고: 판례-194950]**
 
     ##### 🔹 **관련 뉴스**  
-    뉴스 벡터DB에서 찾은 관련 뉴스를 설명하고, 사용자 질문에 맞게 핵심 내용을 풀어 설명합니다.  
-    뉴스가 없다면 이 부분은 생략하세요.
+    뉴스 백터DB에서 찾은 관련 뉴스를 설명하고, 사용자 질문에 맞게 핵심 내용을 풀어 설명합니다.  
+    뉴스 백터DB에서 찾은 뉴스가 없다면 **[관련 뉴스]** 부분은 전체 생략하세요.  
     → 출처 표기: **[참고: 뉴스]**
 
+    ##### 🔹 **법령해석례, 생활법령 Q&A 참고**  
+    법령해석례, 생활법령 Q&A 에 유사한 내용이 있는 경우 사용자 질문에 맞게 설명하고,  
+    없다면 **[법령해석례, 생활법령 Q&A 참고]** 부분은 전체 생략하세요.  
+
+    정부 기관의 유권해석이 있는 경우 설명하고, 실생활에 어떻게 적용되는지도 안내합니다.  
+    → 출처 표기: **[참고: 법령해석례]**
+
+    생활법령정보 '백문백답' 중 유사 사례가 있다면 사용자 질문에 맞게 설명하며 연결해줍니다.  
+    → 출처 표기: **[참고: 생활법령]**
+
+    ---
+
     ##### ✔️ **행동방침 제안**  
-    위의 법률 자료들을 종합하여 지금 상황에서 할 수 있는 **단계별 실행 계획** 제시
+    위의 법률 자료들을 종합하여 지금 상황에서 할 수 있는 **단계별 실행 계획** 제시:
+ 
+
+    각 단계별로 방법, 연락처, 비용 등을 안내합니다.
+    단계 당 1줄을 넘지 마세요.
 
     ###### ※ **유의사항**  
-    법률 자료를 바탕으로 한 주의점과 전문가 상담 안내
+    법률 자료를 바탕으로 한 주의점:  
+    - 판례/해석례에서 나타난 주의할 점들  
+    - 실수하기 쉬운 부분과 대비책  
+    - 전문가 상담이 필요한 경우와 상담 기관 안내  
+    - 법적 분쟁에서 주의해야 할 점이나 추가로 고려할 사항 정리  
+
+    유의사항은 핵심 내용만 1줄로 요약하세요.
+
+    ---
 
     ### 📌 중요 지침
-    - 참고자료의 내용을 단순 복사하지 말고, 사용자 질문에 맞게 해석하여 설명하세요.
-    - context에 해당 유형의 자료가 없으면 그 자료는 생략하세요.
+    - 각 자료의 **구체적인 번호나 식별자**를 정확히 인용하세요.  
+    - 참고자료의 내용을 **단순 복사하지 말고**, 사용자 질문에 맞게 **해석하여 설명**하세요.  
+    - context에 해당 유형의 자료가 없으면 **그 자료는 생략**하세요.  
+    - 필요 시 **법률 상담, 상담 기관 등도 안내**합니다.  
+    - **중복된 내용은 한 번만** 표기하세요.  
+    → 출처 표기: **[참고: 판례]**
     """
+
     
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_message),
@@ -595,7 +737,9 @@ def create_user_friendly_chat_chain(rag_system):
     ])
     
     def user_friendly_retrieve_and_format(query):
+        """사용자 친화적 검색 및 포맷팅 - 전처리 포함"""
         try:
+            rag_system = get_rag_system()
             docs, search_type = rag_system.conditional_retrieve(query)
             formatted_result = format_docs_optimized(docs, search_type)
             return formatted_result
