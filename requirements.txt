@@ -13,7 +13,6 @@ langgraph
 langchain-chroma
 chromadb
 openai
-pysqlite3-binary
 protobuf==4.25.3  # ← 여기가 핵심
 requests>=2.28.0  # Google Drive 다운로드용
 gdown
