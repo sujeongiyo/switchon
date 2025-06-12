@@ -36,16 +36,48 @@ logging.basicConfig(level=logging.WARNING)
 
 load_dotenv()
 
+# --- 벡터 DB 다운로드 함수
+@st.cache_resource
+def download_and_extract_databases(verbose=True):
+    urls = {
+        "chroma_db_law_real_final": "https://huggingface.co/datasets/sujeonggg/chroma_db_law_real_final/resolve/main/chroma_db_law_real_final.zip",
+        "ja_chroma_db": "https://huggingface.co/datasets/sujeonggg/chroma_db_law_real_final/resolve/main/ja_chroma_db.zip",
+    }
 
-from utils.vector_db_loader import download_and_extract_databases
-from core.app_core import (
-    initialize_complete_system,
-    get_rag_system,
-    create_chat_chain_with_memory,
-    optimized_retrieve_and_format,
-    load_custom_css,
-    display_ad_banner,
-)
+    def download_and_unzip(url, extract_to):
+        os.makedirs(extract_to, exist_ok=True)
+        zip_path = os.path.join(extract_to, "temp.zip")
+
+        if os.path.exists(os.path.join(extract_to, "index")):
+            if verbose:
+                print(f"✅ Already exists: {extract_to}")
+            return True
+
+        try:
+            if verbose:
+                print(f"📦 Downloading from {url}...")
+            r = requests.get(url)
+            with open(zip_path, "wb") as f:
+                f.write(r.content)
+
+            if verbose:
+                print(f"🧩 Unzipping to {extract_to}...")
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_to)
+
+            os.remove(zip_path)
+            return True
+        except Exception as e:
+            if verbose:
+                print(f"❌ Failed to download {url}: {e}")
+            return False
+
+    success = True
+    for name, url in urls.items():
+        if not download_and_unzip(url, name):
+            success = False
+
+    return success
 
 
 # ——— 커스텀 CSS 스타일 ———
