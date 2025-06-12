@@ -9,11 +9,9 @@ import uuid
 import logging
 import requests
 import zipfile
-import gdown
 
 import streamlit as st
 import streamlit.components.v1 as components
-from dotenv import load_dotenv
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -33,8 +31,6 @@ from langchain_openai import ChatOpenAI
 
 # 로그 레벨 감소
 logging.basicConfig(level=logging.WARNING)
-
-load_dotenv()
 
 # ——— 🔧 벡터 DB 다운로드 함수 ———
 @st.cache_resource
@@ -131,7 +127,6 @@ def initialize_embeddings_and_databases():
     except Exception as e:
         print(f"❌ 초기화 실패: {e}")
         return None, None, None, False
-
 
 # ——— 커스텀 CSS 스타일 ———
 def load_custom_css():
@@ -283,22 +278,6 @@ def load_custom_css():
         to { transform: translateX(0); opacity: 1; }
     }
     
-    /* 광고 배너 */
-    .ad-banner {
-        background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-        border: 2px solid #f59e0b;
-        border-radius: 15px;
-        padding: 1.5rem;
-        margin: 1.5rem 0;
-        box-shadow: 0 6px 20px rgba(245, 158, 11, 0.15);
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
-    }
-    
-    .ad-banner:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(245, 158, 11, 0.25);
-    }
-    
     /* 버튼 스타일 */
     .stButton > button {
         background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
@@ -357,9 +336,7 @@ def load_custom_css():
     </style>
     """, unsafe_allow_html=True)
 
-# ——— 원본 코드의 모든 클래스들 (그대로 유지) ———
-
-# 1. 일상어 → 법률어 전처리 클래스
+# ——— 법률 쿼리 전처리 클래스 ———
 class LegalQueryPreprocessor:
     """일상어를 법률 용어로 변환하는 전처리기"""
     
@@ -448,119 +425,58 @@ class LegalQueryPreprocessor:
             print(f"⚠️ 쿼리 변환 오류: {e}")
             return user_query, "error"
 
-# 2. 싱글톤 패턴으로 임베딩 모델 최적화
-class SingletonMeta(type):
-    _instances = {}
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super().__call__(*args, **kwargs)
-        return cls._instances[cls]
-
-class OptimizedKoSBERTEmbeddings(metaclass=SingletonMeta):
-    def __init__(self, model_name="jhgan/ko-sbert-sts"):
-        if not hasattr(self, 'model'):
-            print(f"🔄 KoSBERT 모델 로딩: {model_name}")
-            self.model = SentenceTransformer(model_name)
-            print("✅ KoSBERT 모델 로딩 완료")
-    
-    @functools.lru_cache(maxsize=128)
-    def embed_query_cached(self, text):
-        return tuple(self.model.encode(text))
-    
-    def embed_documents(self, texts):
-        return self.model.encode(texts, batch_size=32)
-    
-    def embed_query(self, text):
-        cached_result = self.embed_query_cached(text)
-        return np.array(cached_result)
-
-# 3. RAG 시스템 (간소화된 버전)
+# ——— RAG 시스템 ———
 class OptimizedConditionalRAGSystem:
-    def __init__(self):
-        print("🚀 최적화된 RAG 시스템 초기화 중...")
+    def __init__(self, legal_db, news_db):
+        print("🚀 RAG 시스템 초기화 중...")
+        
+        # 데이터베이스 연결
+        self.legal_db = legal_db
+        self.news_db = news_db
         
         # 쿼리 전처리기 초기화
         self.query_preprocessor = LegalQueryPreprocessor()
         print("✅ 법률 용어 전처리기 준비 완료")
         
-        # 임베딩 함수 초기화
-        self.legal_embedding_function = OptimizedKoSBERTEmbeddings()
-        print("📊 KoSBERT 768차원 임베딩 사용")
-        
-        # 임계값 설정
-        self.legal_similarity_threshold = 0.7
-        self.news_similarity_threshold = 0.6
-        self.min_relevant_docs = 3
-        
-        # 🚀 ChromaDB 연결 (다운로드된 파일 사용)
-        self._init_databases()
-    
-    def _init_databases(self):
-        """ChromaDB 초기화"""
-        try:
-            # 법률 DB 연결
-            if os.path.exists("chroma_db_law_real_final"):
-                self.legal_db = Chroma(
-                    persist_directory="chroma_db_law_real_final",
-                    collection_name="legal_db",
-                    embedding_function=self.legal_embedding_function
-                )
-                self.legal_vector_retriever = self.legal_db.as_retriever(
-                    search_type="similarity", 
-                    search_kwargs={"k": 5}
-                )
-                print("✅ 법률 DB 연결 완료")
-            else:
-                print("⚠️ 법률 DB 파일이 없습니다")
-                self.legal_db = None
-                self.legal_vector_retriever = None
-            
-            # 뉴스 DB 연결  
-            if os.path.exists("ja_chroma_db"):
-                self.news_db = Chroma(
-                    persist_directory="ja_chroma_db",
-                    collection_name="jeonse_fraud_embedding",
-                    embedding_function=self.legal_embedding_function
-                )
-                self.news_vector_retriever = self.news_db.as_retriever(
-                    search_type="similarity",
-                    search_kwargs={"k": 4}
-                )
-                print("✅ 뉴스 DB 연결 완료")
-            else:
-                print("⚠️ 뉴스 DB 파일이 없습니다")
-                self.news_db = None
-                self.news_vector_retriever = None
-                
-        except Exception as e:
-            print(f"❌ DB 연결 실패: {e}")
-            self.legal_db = None
-            self.news_db = None
+        # 리트리버 초기화
+        if self.legal_db:
+            self.legal_vector_retriever = self.legal_db.as_retriever(
+                search_type="similarity", 
+                search_kwargs={"k": 5}
+            )
+        else:
             self.legal_vector_retriever = None
+            
+        if self.news_db:
+            self.news_vector_retriever = self.news_db.as_retriever(
+                search_type="similarity",
+                search_kwargs={"k": 4}
+            )
+        else:
             self.news_vector_retriever = None
     
     def search_legal_db(self, query):
         """법률 DB 검색"""
-        if self.legal_db is None:
+        if self.legal_vector_retriever is None:
             return [], 0.0
         
         try:
             legal_docs = self.legal_vector_retriever.invoke(query)
             print(f"📄 법률 검색 결과: {len(legal_docs)}개 문서")
-            return legal_docs, 0.8  # 간단한 고정 점수
+            return legal_docs, 0.8
         except Exception as e:
             print(f"❌ 법률 DB 검색 오류: {e}")
             return [], 0.0
     
     def search_news_db(self, query):
         """뉴스 DB 검색"""
-        if self.news_db is None:
+        if self.news_vector_retriever is None:
             return [], 0.0
         
         try:
             news_docs = self.news_vector_retriever.invoke(query)
             print(f"📰 뉴스 검색 결과: {len(news_docs)}개")
-            return news_docs, 0.7  # 간단한 고정 점수
+            return news_docs, 0.7
         except Exception as e:
             print(f"❌ 뉴스 DB 검색 오류: {e}")
             return [], 0.0
@@ -601,14 +517,14 @@ class OptimizedConditionalRAGSystem:
             print(f"❌ 검색 오류: {e}")
             return [], "error"
 
-# 4. 문서 포맷팅 (간소화된 버전)
+# ——— 문서 포맷팅 ———
 def format_docs_optimized(docs, search_type):
     """문서 포맷팅"""
     if not docs:
         return "관련 자료를 찾을 수 없습니다."
     
     formatted_docs = []
-    for i, doc in enumerate(docs[:5]):  # 최대 5개만 표시
+    for i, doc in enumerate(docs[:10]):  # 최대 10개 표시
         try:
             meta = doc.metadata if doc.metadata else {}
             content = str(doc.page_content)[:500] if doc.page_content else ""
@@ -628,42 +544,18 @@ def format_docs_optimized(docs, search_type):
     
     return "\n\n".join(formatted_docs)
 
-# 5. 전역 시스템 인스턴스
-_conditional_rag = None
-
-def get_rag_system():
-    """RAG 시스템 싱글톤 인스턴스 반환"""
-    global _conditional_rag
-    if _conditional_rag is None:
-        _conditional_rag = OptimizedConditionalRAGSystem()
-    return _conditional_rag
-
-# 6. 검색 함수
-def optimized_retrieve_and_format(query):
-    """검색 및 포맷팅"""
-    try:
-        rag_system = get_rag_system()
-        docs, search_type = rag_system.conditional_retrieve(query)
-        return format_docs_optimized(docs, search_type)
-    except Exception as e:
-        print(f"❌ 검색 오류: {e}")
-        return f"검색 중 오류가 발생했습니다: {str(e)}"
-
-# 7. 채팅 체인
-def create_user_friendly_chat_chain():
-    """일반 사용자를 위한 친화적 체인 - 쿼리 전처리 정보 포함"""
+# ——— 채팅 체인 생성 ———
+def create_user_friendly_chat_chain(rag_system):
+    """사용자 친화적 채팅 체인 생성"""
     llm = ChatOpenAI(
         model="gpt-4o",
         temperature=0.3,
         max_tokens=3000,
     )
-    
 
     system_message = """
     당신은 부동산 임대차, 전세사기, 법령해석, 생활법령 Q&A, 뉴스 기사 등 다양한 법률 데이터를 바탕으로 청년을 돕는 법률 전문가 AI 챗봇입니다.  
     특히 전세사기 피해 등 부동산 문제로 어려움을 겪는 사람들에게 쉽고 실질적인 도움을 제공하는 역할을 합니다.
-
-    ---
 
     ### ✅ 답변 원칙
     1. **어려운 법률 용어는 일상적인 표현**으로 바꿔 설명합니다.  
@@ -671,65 +563,29 @@ def create_user_friendly_chat_chain():
     3. **친절하고 따뜻한 말투**를 사용하여, 불안한 상황에 있는 사람에게 위로와 힘이 되도록 합니다.  
     4. **법률적 근거가 있는 정보만 제공**하며, 출처를 명확히 표기합니다.  
 
-    ---
-
     ### 🧭 답변 구조
-
     [질문 해석 안내]  
-    사용자의 질문을 법률 검색에 적합하게 바꿔서 이해했음을 간단히 설명합니다.<br>
-    (예: "질문하신 내용을 법률 용어로 바꾸면 '보증금을 돌려받지 못한 경우에 대한 법적 대응'으로 볼 수 있어요.")<br>
+    사용자의 질문을 법률 검색에 적합하게 바꿔서 이해했음을 간단히 설명합니다.
 
     ##### 🔹 **유사 판례 요약**  
     법률 벡터DB에서 찾은 관련 판례를 설명하고, 사용자 질문에 맞게 핵심 내용을 풀어 설명합니다.  
-    유사 판례는 2개를 가져오세요. 
-    출처 표기는 판례 요약 앞에는 달지 마세요. 답변 뒤에 달아주세요. 
-    각 판례 앞에는 1, 2번으로 숫자를 적어주세요. 
-    → 출처 표기: (예: **[참고: 판례-194950]**
+    → 출처 표기: **[참고: 판례]**
 
     ##### 🔹 **관련 뉴스**  
-    뉴스 백터DB에서 찾은 관련 뉴스를 설명하고, 사용자 질문에 맞게 핵심 내용을 풀어 설명합니다.  
-    뉴스 백터DB에서 찾은 뉴스가 없다면 **[관련 뉴스]** 부분은 전체 생략하세요.  
+    뉴스 벡터DB에서 찾은 관련 뉴스를 설명하고, 사용자 질문에 맞게 핵심 내용을 풀어 설명합니다.  
+    뉴스가 없다면 이 부분은 생략하세요.
     → 출처 표기: **[참고: 뉴스]**
 
-    ##### 🔹 **법령해석례, 생활법령 Q&A 참고**  
-    법령해석례, 생활법령 Q&A 에 유사한 내용이 있는 경우 사용자 질문에 맞게 설명하고,  
-    없다면 **[법령해석례, 생활법령 Q&A 참고]** 부분은 전체 생략하세요.  
-
-    정부 기관의 유권해석이 있는 경우 설명하고, 실생활에 어떻게 적용되는지도 안내합니다.  
-    → 출처 표기: **[참고: 법령해석례]**
-
-    생활법령정보 '백문백답' 중 유사 사례가 있다면 사용자 질문에 맞게 설명하며 연결해줍니다.  
-    → 출처 표기: **[참고: 생활법령]**
-
-    ---
-
     ##### ✔️ **행동방침 제안**  
-    위의 법률 자료들을 종합하여 지금 상황에서 할 수 있는 **단계별 실행 계획** 제시:
- 
-
-    각 단계별로 방법, 연락처, 비용 등을 안내합니다.
-    단계 당 1줄을 넘지 마세요.
+    위의 법률 자료들을 종합하여 지금 상황에서 할 수 있는 **단계별 실행 계획** 제시
 
     ###### ※ **유의사항**  
-    법률 자료를 바탕으로 한 주의점:  
-    - 판례/해석례에서 나타난 주의할 점들  
-    - 실수하기 쉬운 부분과 대비책  
-    - 전문가 상담이 필요한 경우와 상담 기관 안내  
-    - 법적 분쟁에서 주의해야 할 점이나 추가로 고려할 사항 정리  
-
-    유의사항은 핵심 내용만 1줄로 요약하세요.
-
-    ---
+    법률 자료를 바탕으로 한 주의점과 전문가 상담 안내
 
     ### 📌 중요 지침
-    - 각 자료의 **구체적인 번호나 식별자**를 정확히 인용하세요.  
-    - 참고자료의 내용을 **단순 복사하지 말고**, 사용자 질문에 맞게 **해석하여 설명**하세요.  
-    - context에 해당 유형의 자료가 없으면 **그 자료는 생략**하세요.  
-    - 필요 시 **법률 상담, 상담 기관 등도 안내**합니다.  
-    - **중복된 내용은 한 번만** 표기하세요.  
-    → 출처 표기: **[참고: 판례]**
+    - 참고자료의 내용을 단순 복사하지 말고, 사용자 질문에 맞게 해석하여 설명하세요.
+    - context에 해당 유형의 자료가 없으면 그 자료는 생략하세요.
     """
-
     
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_message),
@@ -739,9 +595,7 @@ def create_user_friendly_chat_chain():
     ])
     
     def user_friendly_retrieve_and_format(query):
-        """사용자 친화적 검색 및 포맷팅 - 전처리 포함"""
         try:
-            rag_system = get_rag_system()
             docs, search_type = rag_system.conditional_retrieve(query)
             formatted_result = format_docs_optimized(docs, search_type)
             return formatted_result
@@ -760,8 +614,8 @@ def create_user_friendly_chat_chain():
         | StrOutputParser()
     )
     return chain
-    
-# 8. 메모리 관리
+
+# ——— 메모리 관리 ———
 store = {}
 
 def get_session_history(session_id):
@@ -772,9 +626,9 @@ def get_session_history(session_id):
         history.messages = history.messages[-20:]
     return history
 
-def create_chat_chain_with_memory():
+def create_chat_chain_with_memory(rag_system):
     """메모리 기능이 있는 채팅 체인"""
-    base_chain = create_user_friendly_chat_chain()
+    base_chain = create_user_friendly_chat_chain(rag_system)
     chain_with_history = RunnableWithMessageHistory(
         base_chain,
         get_session_history,
@@ -836,21 +690,6 @@ def display_ad_banner():
     st.markdown("---")
     st.markdown("💡 **신뢰할 수 있는 부동산 전문가와 상담하세요**")
 
-# ——— 🔧 시스템 초기화 함수 (핵심!) ———
-@st.cache_resource
-def initialize_complete_system():
-    """시스템 전체 초기화"""
-    # 다운로드는 출력 없이 진행
-    download_success = download_and_extract_databases(verbose=False)
-
-    # RAG 시스템 초기화만 간단한 메시지 출력
-    try:
-        rag_system = get_rag_system()
-        return rag_system, True
-    except Exception as e:
-        return None, False
-
-
 # ——— 메인 애플리케이션 ———
 def main():
     """메인 애플리케이션 함수"""
@@ -879,7 +718,7 @@ def main():
 
     # ——— 🚀 핵심! 시스템 초기화 ———
     with st.spinner("🔄 AI 시스템 초기화 중..."):
-        rag_system, system_ready = initialize_complete_system()
+        embedding_model, legal_db, news_db, system_ready = initialize_embeddings_and_databases()
 
     # ——— 세션 초기화 ———
     if "session_id" not in st.session_state:
@@ -887,15 +726,18 @@ def main():
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
-    # ——— 채팅 체인 생성 ———
-    if system_ready:
+    # ——— RAG 시스템 및 채팅 체인 생성 ———
+    if system_ready and (legal_db or news_db):
         try:
-            chain = create_chat_chain_with_memory()
+            rag_system = OptimizedConditionalRAGSystem(legal_db, news_db)
+            chain = create_chat_chain_with_memory(rag_system)
         except Exception as e:
-            st.error(f"❌ 채팅 시스템 오류: {str(e)}")
+            st.error(f"❌ RAG 시스템 오류: {str(e)}")
             chain = None
+            rag_system = None
     else:
         chain = None
+        rag_system = None
 
     # ——— 사이드바 ———
     with st.sidebar:
@@ -934,17 +776,17 @@ def main():
         """, unsafe_allow_html=True)
         
         if system_ready:
-            st.success("✅ RAG 시스템 준비완료")
+            st.success("✅ 시스템 준비완료")
         else:
-            st.error("❌ RAG 시스템 오류")
+            st.error("❌ 시스템 초기화 실패")
         
         # 데이터베이스 상태
-        if os.path.exists("chroma_db_law_real_final"):
+        if legal_db:
             st.success("✅ 법률 DB 연결됨")
         else:
             st.warning("⚠️ 법률 DB 미연결")
             
-        if os.path.exists("ja_chroma_db"):
+        if news_db:
             st.success("✅ 뉴스 DB 연결됨")
         else:
             st.warning("⚠️ 뉴스 DB 미연결")
@@ -1002,7 +844,6 @@ def main():
     # ——— 질문 입력 ———
     prompt = st.session_state.pop("sidebar_prompt", None)
     if not prompt:
-        # 커스텀 입력창 스타일
         st.markdown("""
         <div style="position: sticky; bottom: 0; background: rgba(255,255,255,0.95); 
                     padding: 1rem; border-radius: 15px; margin-top: 2rem;
