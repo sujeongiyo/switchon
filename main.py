@@ -38,7 +38,6 @@ load_dotenv()
 
 from utils.vector_db_loader import download_and_extract_vector_dbs
 
-# 벡터 DB 다운로드 및 압축 해제 (verbose=True 시 로그 출력)
 download_and_extract_vector_dbs(verbose=True)
 
 # ——— 커스텀 CSS 스타일 ———
