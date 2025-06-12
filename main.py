@@ -37,65 +37,24 @@ logging.basicConfig(level=logging.WARNING)
 load_dotenv()
 
 
-# ——— 🚀 Google Drive 다운로드 함수 (gdown 기반) ———
-@st.cache_data
-def download_and_extract_databases(verbose=False):
-    """Google Drive에서 ChromaDB 파일들을 다운로드하고 압축 해제"""
-    
-    files_to_download = [
-        {
-            "filename": "chroma_db_law_real_final.zip",
-            "extract_dir": "chroma_db_law_real_final",
-            "gdrive_id": "1gp5h0QScWB3wcsbs4i12ny1wEMY_HAqX"
-        },
-        {
-            "filename": "ja_chroma_db.zip", 
-            "extract_dir": "ja_chroma_db",
-            "gdrive_id": "1dU9TLAPMg-Q8DLQjZM38CC-TsK477dSO"
-        }
-    ]
-    
-    def download_and_extract_single(file_info):
-        zip_path = file_info["filename"]
-        extract_path = file_info["extract_dir"]
-        gdrive_id = file_info["gdrive_id"]
+from utils.vector_db_loader import download_and_extract_databases
 
-        if not os.path.exists(extract_path):
-            if verbose:
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                status_text.text("📥 Google Drive에서 다운로드 중...")
+# --- 다운로드 및 압축 해제 (경로명은 고정되어 있음)
+download_and_extract_databases(verbose=True)
 
-            try:
-                if verbose:
-                    progress_bar.progress(10)
+# --- KoSBERT 임베딩 모델 로드
+embedding_model = SentenceTransformer("snunlp/KR-SBERT-V40K-klueNLI-augSTS")
 
-                gdown.download(id=gdrive_id, output=zip_path, quiet=not verbose)
+# --- Chroma Vector DB 로드
+legal_db = Chroma(
+    persist_directory="chroma_db_law_real_final",
+    embedding_function=embedding_model
+)
 
-                if verbose:
-                    progress_bar.progress(60)
-                    status_text.text("🗂️ 압축 해제 중...")
-
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(extract_path)
-
-                os.remove(zip_path)
-
-                if verbose:
-                    progress_bar.progress(100)
-                    status_text.text(f"✅ {extract_path} 준비 완료!")
-
-            except Exception as e:
-                if verbose:
-                    st.error(f"❌ 다운로드 실패: {zip_path} - {str(e)}")
-                return False
-            finally:
-                if verbose:
-                    progress_bar.empty()
-                    status_text.empty()
-        return True
-
-    return all(download_and_extract_single(info) for info in files_to_download)
+news_db = Chroma(
+    persist_directory="ja_chroma_db",
+    embedding_function=embedding_model
+)
 
 
 # ——— 커스텀 CSS 스타일 ———
