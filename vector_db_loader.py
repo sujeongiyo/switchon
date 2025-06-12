@@ -1,20 +1,25 @@
 import os
 import zipfile
 import gdown
+import streamlit as st
 
 def download_and_extract_vector_dbs(verbose: bool = False):
-    """Google Drive에서 벡터 DB zip 파일을 다운로드하고 지정된 디렉토리에 압축 해제"""
+    """Streamlit secrets 기반으로 Google Drive에서 벡터 DB 다운로드 및 압축 해제"""
+
+    # secrets.toml 에서 ID 가져오기
+    legal_gdrive_id = st.secrets["vector_db"]["legal_gdrive_id"]
+    news_gdrive_id = st.secrets["vector_db"]["news_gdrive_id"]
 
     files_to_download = [
         {
             "filename": "chroma_db_law_real_final.zip",
-            "extract_dir": "chroma_db_law_real_final",  # LEGAL_COLLECTION_NAME 디렉토리
-            "gdrive_id": "1gp5h0QScWB3wcsbs4i12ny1wEMY_HAqX"
+            "extract_dir": "chroma_db_law_real_final",
+            "gdrive_id": legal_gdrive_id
         },
         {
             "filename": "ja_chroma_db.zip",
-            "extract_dir": "ja_chroma_db",  # NEWS_COLLECTION_NAME 디렉토리
-            "gdrive_id": "1dU9TLAPMg-Q8DLQjZM38CC-TsK477dSO"
+            "extract_dir": "ja_chroma_db",
+            "gdrive_id": news_gdrive_id
         }
     ]
 
@@ -31,17 +36,17 @@ def download_and_extract_vector_dbs(verbose: bool = False):
         try:
             url = f"https://drive.google.com/uc?id={gdrive_id}"
             if verbose:
-                print(f"[INFO] Downloading '{zip_path}' from Google Drive...")
+                print(f"[INFO] Downloading '{zip_path}'...")
             gdown.download(url, zip_path, quiet=not verbose)
 
             if verbose:
-                print(f"[INFO] Extracting '{zip_path}' to '{extract_path}'...")
+                print(f"[INFO] Extracting '{zip_path}'...")
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(extract_path)
 
             os.remove(zip_path)
             if verbose:
-                print(f"[INFO] Extraction complete. '{zip_path}' removed.")
+                print(f"[INFO] Done: {extract_path}")
 
         except Exception as e:
             print(f"[ERROR] Failed to process '{zip_path}': {e}")
